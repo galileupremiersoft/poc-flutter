@@ -6,6 +6,7 @@ void main() {
 }
 
 class MyApp extends StatelessWidget {
+  // JSON de exemplo com regex devidamente escapadas
   final String jsonData = '''
 {
   "type": "form",
@@ -30,7 +31,7 @@ class MyApp extends StatelessWidget {
               "required": true,
               "defaultValue": "",
               "validators": {
-                "regex": "^[A-Za-zÀ-ÿ\\s]+\$"
+                "regex": "^[A-Za-zÀ-ÿ\\\\s]+\$"
               }
             },
             {
@@ -53,7 +54,7 @@ class MyApp extends StatelessWidget {
               "required": true,
               "defaultValue": "",
               "validators": {
-                "regex": "^\\d{4}-\\d{2}-\\d{2}\$"
+                "regex": "^\\\\d{4}-\\\\d{2}-\\\\d{2}\$"
               }
             }
           ]
@@ -71,7 +72,7 @@ class MyApp extends StatelessWidget {
               "required": true,
               "defaultValue": "",
               "validators": {
-                "regex": "^[\\w-\\.]+@([\\w-]+\\.)+[\\w-]{2,4}\$"
+                "regex": "^[\\\\w-\\\\.]+@([\\\\w-]+\\\\.)+[\\\\w-]{2,4}\$"
               }
             },
             {
@@ -94,7 +95,7 @@ class MyApp extends StatelessWidget {
               "required": false,
               "defaultValue": "",
               "validators": {
-                "regex": "^\\+?[0-9]{10,15}\$"
+                "regex": "^\\\\+?[0-9]{10,15}\$"
               },
               "visibilityConditions": {
                 "dependsOn": "preferencia_contato",
@@ -196,19 +197,94 @@ class FormWidget extends StatefulWidget {
 class _FormWidgetState extends State<FormWidget> {
   final _formKey = GlobalKey<FormState>();
   final Map<String, dynamic> formData = {};
+  int currentPageIndex = 0;
+  late List<dynamic> pages;
+
+  @override
+  void initState() {
+    super.initState();
+    // Filtra as páginas do formulário
+    pages = widget.formDefinition['children']
+        .where((child) => child['type'] == 'page')
+        .toList();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Form(
-      key: _formKey,
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(8.0),
-        child: buildWidget(widget.formDefinition),
+    return Column(
+      children: [
+        Expanded(
+          child: Form(
+            key: _formKey,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(8.0),
+              child: buildWidget(pages[currentPageIndex]),
+            ),
+          ),
+        ),
+        buildNavigationButtons()
+      ],
+    );
+  }
+
+  // Botões de navegação para mudar de página
+  Widget buildNavigationButtons() {
+    return Container(
+      color: Colors.grey[200],
+      padding: const EdgeInsets.all(8.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          if (currentPageIndex > 0)
+            ElevatedButton(
+              onPressed: () {
+                setState(() {
+                  currentPageIndex--;
+                });
+              },
+              child: const Text('Página Anterior'),
+            )
+          else
+            const SizedBox(width: 120), // Espaço reservado quando não há botão anterior
+          ElevatedButton(
+            onPressed: () {
+              if (_formKey.currentState!.validate()) {
+                _formKey.currentState!.save();
+                // Se estiver na última página, finaliza o formulário
+                if (currentPageIndex == pages.length - 1) {
+                  // Processar os dados do formulário
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Formulário Enviado'))
+                  );
+                } else {
+                  setState(() {
+                    currentPageIndex++;
+                  });
+                }
+              }
+            },
+            child: Text(
+              currentPageIndex == pages.length - 1
+                  ? 'Finalizar'
+                  : 'Próxima Página'
+            ),
+          ),
+        ],
       ),
     );
   }
 
+  // Função recursiva que constrói widgets a partir do JSON
   Widget buildWidget(Map<String, dynamic> node) {
+    // Se o nó possuir condições de visibilidade, verifica antes de renderizar
+    if (node.containsKey('visibilityConditions')) {
+      String dependsOn = node['visibilityConditions']['dependsOn'];
+      var expectedValue = node['visibilityConditions']['value'];
+      if (formData[dependsOn] != expectedValue) {
+        return const SizedBox.shrink();
+      }
+    }
+
     String type = node['type'];
     switch (type) {
       case 'form':
@@ -219,26 +295,18 @@ class _FormWidgetState extends State<FormWidget> {
               .toList(),
         );
       case 'page':
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8.0),
-          child: Card(
-            child: Padding(
-              padding: const EdgeInsets.all(12.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    node['title'] ?? '',
-                    style: Theme.of(context).textTheme.headline6,
-                  ),
-                  const SizedBox(height: 10),
-                  ...((node['children'] as List)
-                      .map<Widget>((child) => buildWidget(child))
-                      .toList())
-                ],
-              ),
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              node['title'] ?? '',
+              style: Theme.of(context).textTheme.headline6,
             ),
-          ),
+            const SizedBox(height: 10),
+            ...((node['children'] as List)
+                .map<Widget>((child) => buildWidget(child))
+                .toList())
+          ],
         );
       case 'section':
         return Padding(
@@ -264,13 +332,22 @@ class _FormWidgetState extends State<FormWidget> {
     }
   }
 
+  // Constrói o campo de input com base no tipo e implementa validação e lógica de visibilidade
   Widget buildInput(Map<String, dynamic> node) {
+    // Verifica condições de visibilidade específicas para inputs
+    if (node.containsKey('visibilityConditions')) {
+      String dependsOn = node['visibilityConditions']['dependsOn'];
+      var expectedValue = node['visibilityConditions']['value'];
+      if (formData[dependsOn] != expectedValue) {
+        return const SizedBox.shrink();
+      }
+    }
+
     String inputType = node['inputType'];
     String name = node['name'];
     String title = node['title'];
     bool requiredField = node['required'] ?? false;
     var defaultValue = node['defaultValue'];
-
 
     switch (inputType) {
       case 'text':
@@ -294,6 +371,11 @@ class _FormWidgetState extends State<FormWidget> {
                 }
               }
               return null;
+            },
+            onChanged: (value) {
+              setState(() {
+                formData[name] = value;
+              });
             },
             onSaved: (value) {
               formData[name] = value;
@@ -329,8 +411,14 @@ class _FormWidgetState extends State<FormWidget> {
               }
               return null;
             },
+            onChanged: (value) {
+              setState(() {
+                formData[name] = double.tryParse(value);
+              });
+            },
             onSaved: (value) {
-              formData[name] = value != null ? double.tryParse(value) : null;
+              formData[name] =
+                  value != null ? double.tryParse(value) : null;
             },
           ),
         );
@@ -339,7 +427,7 @@ class _FormWidgetState extends State<FormWidget> {
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 8.0),
           child: DropdownButtonFormField(
-            value: defaultValue,
+            value: formData[name] ?? defaultValue,
             decoration: InputDecoration(labelText: title),
             items: options.map<DropdownMenuItem>((option) {
               return DropdownMenuItem(
@@ -364,12 +452,12 @@ class _FormWidgetState extends State<FormWidget> {
           ),
         );
       case 'checkbox':
-        bool currentValue = defaultValue ?? false;
+        bool currentValue = formData[name] ?? defaultValue ?? false;
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 8.0),
           child: CheckboxListTile(
             title: Text(title),
-            value: formData[name] ?? currentValue,
+            value: currentValue,
             onChanged: (bool? value) {
               setState(() {
                 formData[name] = value;
